@@ -1,7 +1,10 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.ensemble import IsolationForest  # Détection des anomalies
+from sklearn.ensemble import IsolationForest, RandomForestClassifier  # Détection des anomalies et modèle de prédiction
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay
 import streamlit as st
 from fpdf import FPDF
 
@@ -34,7 +37,12 @@ def generer_rapport(data, taux_conformite, taux_defaut, defauts_par_type, tendan
 
 # Fonction pour charger le fichier Excel
 def charger_dataset(uploaded_file):
-    return pd.read_excel(uploaded_file)
+    data = pd.read_excel(uploaded_file)
+    if 'Emplacement' not in data.columns:
+        data['Emplacement'] = 'Production'  # Initialiser l'emplacement à 'Production'
+    if 'État' not in data.columns:
+        data['État'] = 'En cours'  # Initialiser l'état à 'En cours'
+    return data
 
 # Fonction pour corriger les anomalies automatiquement
 def corriger_anomalies(data):
@@ -71,6 +79,50 @@ def suggester_correction(anomalies):
             suggestions.append(f"ID {index}: Réduire la température à 25°C.")
     return suggestions
 
+# Fonction pour mettre à jour l'emplacement et l'état des produits
+def mettre_a_jour_etat(data, ids_produits, nouvel_emplacement, nouvel_etat):
+    for id_produit in ids_produits:
+        data.loc[data['ID'] == id_produit, 'Emplacement'] = nouvel_emplacement
+        data.loc[data['ID'] == id_produit, 'État'] = nouvel_etat
+    return data
+
+# Fonction pour entraîner un modèle de machine learning pour prédire les défauts
+def entrainer_modele(data):
+    # Préparation des données
+    features = data.drop(columns=['Résultat QC'])
+    
+    # Convertir les colonnes de type datetime en format numérique
+    for col in features.select_dtypes(include=['datetime64']).columns:
+        features[col] = features[col].astype('int64') / 10**9  # Convertir en secondes depuis l'époque
+    
+    # Sélectionner uniquement les colonnes numériques
+    features = features.select_dtypes(include=[np.number])
+    
+    target = data['Résultat QC'].apply(lambda x: 1 if x == 'Non conforme' else 0)
+    
+    # Division des données en ensembles d'entraînement et de test
+    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+    
+    # Entraînement du modèle
+    modele = RandomForestClassifier(random_state=42)
+    modele.fit(X_train, y_train)
+    
+    # Évaluation du modèle
+    y_pred = modele.predict(X_test)
+    rapport = classification_report(y_test, y_pred, target_names=['Conforme', 'Non conforme'], output_dict=True)
+    
+    # Affichage du rapport de classification sous forme de tableau
+    st.write("### Rapport de classification")
+    st.table(pd.DataFrame(rapport).transpose())
+    
+    # Affichage de la matrice de confusion
+    st.write("### Matrice de confusion")
+    fig, ax = plt.subplots()
+    ConfusionMatrixDisplay.from_estimator(modele, X_test, y_test, display_labels=['Conforme', 'Non conforme'], ax=ax)
+    st.pyplot(fig)
+    
+    return modele
+
 # Charger le dataset (exemple avec un fichier téléchargé)
 uploaded_file = st.file_uploader("Téléchargez le fichier Excel", type=['xlsx'])
 if uploaded_file is not None:
@@ -78,6 +130,16 @@ if uploaded_file is not None:
 
     # Étape 1 : Corriger les anomalies automatiquement
     data = corriger_anomalies(data)
+
+    # Sélection dynamique pour mettre à jour l'emplacement et l'état de plusieurs produits
+    st.write("### Mise à jour de l'emplacement et de l'état des produits")
+    ids_produits = st.multiselect("Sélectionnez les IDs des produits", data['ID'].unique())
+    nouvel_emplacement = st.selectbox("Sélectionnez le nouvel emplacement", ['Production', 'Transport', 'Client'])
+    nouvel_etat = st.selectbox("Sélectionnez le nouvel état", ['En cours', 'En transit', 'Livré'])
+
+    if st.button("Mettre à jour"):
+        data = mettre_a_jour_etat(data, ids_produits, nouvel_emplacement, nouvel_etat)
+        st.success(f"Produits {ids_produits} mis à jour avec succès : Emplacement = {nouvel_emplacement}, État = {nouvel_etat}")
 
     # Étape 2 : Calcul des indicateurs clés de performance (KPIs)
     total_pieces = len(data)
@@ -145,6 +207,55 @@ if uploaded_file is not None:
             st.write(suggestion)
     else:
         st.write("Aucune anomalie spécifique détectée.")
+
+    # Visualisation du suivi des produits
+    st.write("### Suivi des produits à travers la chaîne logistique")
+    if 'Emplacement' in data.columns and 'État' in data.columns:
+        fig, ax = plt.subplots()
+        sns.countplot(data=data, x='Emplacement', hue='État', ax=ax)
+        ax.set_title('Suivi des produits à travers la chaîne logistique')
+        ax.set_ylabel('Nombre de produits')
+        ax.set_xlabel('Emplacement')
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+    else:
+        st.write("Les colonnes 'Emplacement' et 'État' n'existent pas dans le dataset.")
+
+    # Visualisation des anomalies par emplacement
+    st.write("### Anomalies par emplacement")
+    if 'Emplacement' in data.columns and not anomalies_specifiques.empty:
+        fig, ax = plt.subplots()
+        sns.countplot(data=anomalies_specifiques, x='Emplacement', ax=ax)
+        ax.set_title('Anomalies par emplacement')
+        ax.set_ylabel('Nombre d\'anomalies')
+        ax.set_xlabel('Emplacement')
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+    else:
+        st.write("Les colonnes 'Emplacement' n'existent pas dans le dataset ou aucune anomalie détectée.")
+
+    # Visualisation des taux de conformité et de défaut par emplacement
+    st.write("### Taux de conformité et de défaut par emplacement")
+    if 'Emplacement' in data.columns:
+        taux_conformite_par_emplacement = data[data['Résultat QC'] == 'Conforme'].groupby('Emplacement').size() / data.groupby('Emplacement').size() * 100
+        taux_defaut_par_emplacement = data[data['Résultat QC'] == 'Non conforme'].groupby('Emplacement').size() / data.groupby('Emplacement').size() * 100
+        fig, ax = plt.subplots()
+        taux_conformite_par_emplacement.plot(kind='bar', color='green', ax=ax, position=0, width=0.4, label='Taux de conformité')
+        taux_defaut_par_emplacement.plot(kind='bar', color='red', ax=ax, position=1, width=0.4, label='Taux de défaut')
+        ax.set_title('Taux de conformité et de défaut par emplacement')
+        ax.set_ylabel('Pourcentage')
+        ax.set_xlabel('Emplacement')
+        plt.xticks(rotation=45)
+        ax.legend()
+        st.pyplot(fig)
+    else:
+        st.write("La colonne 'Emplacement' n'existe pas dans le dataset.")
+
+    # Entraînement du modèle de machine learning pour prédire les défauts
+    st.write("### Entraînement du modèle de prédiction des défauts")
+    if st.button("Entraîner le modèle"):
+        modele = entrainer_modele(data)
+        st.success("Modèle entraîné avec succès")
 
     # Générer le rapport en PDF
     pdf_file = generer_rapport(data, taux_conformite, taux_defaut, defauts_par_type, tendances, anomalies_specifiques, suggestions)
