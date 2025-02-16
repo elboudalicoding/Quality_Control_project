@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
 from sklearn.ensemble import IsolationForest, RandomForestClassifier  # Détection des anomalies et modèle de prédiction
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, ConfusionMatrixDisplay
@@ -131,131 +132,117 @@ if uploaded_file is not None:
     # Étape 1 : Corriger les anomalies automatiquement
     data = corriger_anomalies(data)
 
-    # Sélection dynamique pour mettre à jour l'emplacement et l'état de plusieurs produits
-    st.write("### Mise à jour de l'emplacement et de l'état des produits")
-    ids_produits = st.multiselect("Sélectionnez les IDs des produits", data['ID'].unique())
-    nouvel_emplacement = st.selectbox("Sélectionnez le nouvel emplacement", ['Production', 'Transport', 'Client'])
-    nouvel_etat = st.selectbox("Sélectionnez le nouvel état", ['En cours', 'En transit', 'Livré'])
-
-    if st.button("Mettre à jour"):
-        data = mettre_a_jour_etat(data, ids_produits, nouvel_emplacement, nouvel_etat)
-        st.success(f"Produits {ids_produits} mis à jour avec succès : Emplacement = {nouvel_emplacement}, État = {nouvel_etat}")
-
-    # Étape 2 : Calcul des indicateurs clés de performance (KPIs)
+    # Calcul des indicateurs clés de performance (KPIs)
     total_pieces = len(data)
     conform_pieces = data[data['Résultat QC'] == 'Conforme'].shape[0]
     non_conform_pieces = data[data['Résultat QC'] == 'Non conforme'].shape[0]
     taux_conformite = (conform_pieces / total_pieces) * 100
     taux_defaut = (non_conform_pieces / total_pieces) * 100
 
-    # Étape 3 : Visualisation des défauts
-    defauts_par_type = {}
-    if 'Défaut' in data.columns:
-        defauts_par_type = data['Défaut'].value_counts()
-        fig, ax = plt.subplots()
-        sns.barplot(x=defauts_par_type.index, y=defauts_par_type.values, ax=ax)
-        ax.set_title('Répartition des défauts par type')
-        ax.set_ylabel('Nombre de défauts')
-        ax.set_xlabel('Type de défaut')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-
-    # Étape 4 : Analyse des tendances dans le temps
-    tendances = pd.DataFrame()
-    if 'Date' in data.columns:
-        data['Date'] = pd.to_datetime(data['Date'])  # Conversion en format datetime
-        tendances = data.groupby('Date')['Résultat QC'].value_counts().unstack()
-        fig, ax = plt.subplots()
-        tendances.plot(kind='line', figsize=(10, 6), ax=ax)
-        ax.set_title('Tendances des résultats QC dans le temps')
-        ax.set_ylabel('Nombre')
-        ax.set_xlabel('Date')
-        st.pyplot(fig)
-
-    # Étape 5 : Détection des anomalies spécifiques (avant correction)
+    # Détection des anomalies spécifiques (avant correction)
     anomalies_specifiques = detecter_anomalies(data)
 
     # Suggestions de correction pour les anomalies détectées
     suggestions = suggester_correction(anomalies_specifiques)
 
-    # Tableau de bord interactif avec Streamlit
-    st.title('Contrôle Qualité des Produits')
-    st.write("### Indicateurs Clés de Performance")
-    st.metric(label="Taux de conformité", value=f"{taux_conformite:.2f}%")
-    st.metric(label="Taux de défaut", value=f"{taux_defaut:.2f}%")
+    # Visualisation des défauts
+    defauts_par_type = {}
+    if 'Défaut Inspection' in data.columns:
+        defauts_par_type = data['Défaut Inspection'].value_counts()
 
-    # Répartition des défauts
-    st.write("### Répartition des défauts")
-    if not defauts_par_type.empty:
-        st.bar_chart(defauts_par_type)
-    else:
-        st.write("La colonne 'Défaut' n'existe pas dans le dataset.")
+    # Analyse des tendances dans le temps
+    tendances = pd.DataFrame()
+    if 'Date' in data.columns:
+        data['Date'] = pd.to_datetime(data['Date'])  # Conversion en format datetime
+        tendances = data.groupby('Date')['Résultat QC'].value_counts().unstack()
 
-    # Analyse des tendances
-    st.write("### Tendances des résultats QC dans le temps")
-    if not tendances.empty:
-        st.line_chart(tendances)
-    else:
-        st.write("La colonne 'Date' n'existe pas dans le dataset.")
+    # Onglets pour naviguer entre les sections
+    st.write("## Navigation")
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Accueil", "Mise à jour de l'emplacement et de l'état des produits", "Calcul des indicateurs clés de performance", "Visualisation des défauts", "Analyse des tendances", "Détection des anomalies spécifiques", "Entraînement du modèle de prédiction des défauts"])
 
-    # Visualisation des anomalies
-    st.write("### Anomalies spécifiques et suggestions de correction")
-    if not anomalies_specifiques.empty:
-        st.dataframe(anomalies_specifiques)
-        st.write("### Suggestions de correction")
-        for suggestion in suggestions:
-            st.write(suggestion)
-    else:
-        st.write("Aucune anomalie spécifique détectée.")
+    with tab1:
+        st.write("### Accueil")
+        st.write("Bienvenue dans l'application de contrôle qualité des produits.")
 
-    # Visualisation du suivi des produits
-    st.write("### Suivi des produits à travers la chaîne logistique")
-    if 'Emplacement' in data.columns and 'État' in data.columns:
-        fig, ax = plt.subplots()
-        sns.countplot(data=data, x='Emplacement', hue='État', ax=ax)
-        ax.set_title('Suivi des produits à travers la chaîne logistique')
-        ax.set_ylabel('Nombre de produits')
-        ax.set_xlabel('Emplacement')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-    else:
-        st.write("Les colonnes 'Emplacement' et 'État' n'existent pas dans le dataset.")
+    with tab2:
+        st.write("### Mise à jour de l'emplacement et de l'état des produits")
+        ids_produits = st.multiselect("Sélectionnez les IDs des produits", data['ID'].unique())
+        nouvel_emplacement = st.selectbox("Sélectionnez le nouvel emplacement", ['Production', 'Transport', 'Client'])
+        nouvel_etat = st.selectbox("Sélectionnez le nouvel état", ['En cours', 'En transit', 'Livré'])
 
-    # Visualisation des anomalies par emplacement
-    st.write("### Anomalies par emplacement")
-    if 'Emplacement' in data.columns and not anomalies_specifiques.empty:
-        fig, ax = plt.subplots()
-        sns.countplot(data=anomalies_specifiques, x='Emplacement', ax=ax)
-        ax.set_title('Anomalies par emplacement')
-        ax.set_ylabel('Nombre d\'anomalies')
-        ax.set_xlabel('Emplacement')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-    else:
-        st.write("Les colonnes 'Emplacement' n'existent pas dans le dataset ou aucune anomalie détectée.")
+        if st.button("Mettre à jour"):
+            data = mettre_a_jour_etat(data, ids_produits, nouvel_emplacement, nouvel_etat)
+            st.success(f"Produits {ids_produits} mis à jour avec succès : Emplacement = {nouvel_emplacement}, État = {nouvel_etat}")
 
-    # Visualisation des taux de conformité et de défaut par emplacement
-    st.write("### Taux de conformité et de défaut par emplacement")
-    if 'Emplacement' in data.columns:
-        taux_conformite_par_emplacement = data[data['Résultat QC'] == 'Conforme'].groupby('Emplacement').size() / data.groupby('Emplacement').size() * 100
-        taux_defaut_par_emplacement = data[data['Résultat QC'] == 'Non conforme'].groupby('Emplacement').size() / data.groupby('Emplacement').size() * 100
-        fig, ax = plt.subplots()
-        taux_conformite_par_emplacement.plot(kind='bar', color='green', ax=ax, position=0, width=0.4, label='Taux de conformité')
-        taux_defaut_par_emplacement.plot(kind='bar', color='red', ax=ax, position=1, width=0.4, label='Taux de défaut')
-        ax.set_title('Taux de conformité et de défaut par emplacement')
-        ax.set_ylabel('Pourcentage')
-        ax.set_xlabel('Emplacement')
-        plt.xticks(rotation=45)
-        ax.legend()
-        st.pyplot(fig)
-    else:
-        st.write("La colonne 'Emplacement' n'existe pas dans le dataset.")
+            # Afficher le tableau de bord après la mise à jour
+            st.write("### Tableau de bord après mise à jour")
+            st.write("#### Indicateurs Clés de Performance")
+            st.metric(label="Taux de conformité", value=f"{taux_conformite:.2f}%")
+            st.metric(label="Taux de défaut", value=f"{taux_defaut:.2f}%")
 
-    # Entraînement du modèle de machine learning pour prédire les défauts
-    st.write("### Entraînement du modèle de prédiction des défauts")
-    if st.button("Entraîner le modèle"):
-        modele = entrainer_modele(data)
-        st.success("Modèle entraîné avec succès")
+            st.write("#### Répartition des défauts")
+            if 'Défaut Inspection' in data.columns:
+                fig = px.bar(defauts_par_type, x=defauts_par_type.index, y=defauts_par_type.values, labels={'x': 'Type de défaut', 'y': 'Nombre de défauts'}, title='Répartition des défauts par type')
+                st.plotly_chart(fig, key="defauts_par_type")
+            else:
+                st.write("La colonne 'Défaut Inspection' n'existe pas dans le dataset.")
+
+            st.write("#### Analyse des tendances dans le temps")
+            if not tendances.empty:
+                fig = px.line(tendances, labels={'value': 'Nombre', 'Date': 'Date'}, title='Tendances des résultats QC dans le temps')
+                st.plotly_chart(fig, key="tendances")
+            else:
+                st.write("La colonne 'Date' n'existe pas dans le dataset.")
+
+        # Visualisation du suivi des produits
+        st.write("### Suivi des produits à travers la chaîne logistique")
+        if 'Emplacement' in data.columns and 'État' in data.columns:
+            fig, ax = plt.subplots()
+            sns.countplot(data=data, x='Emplacement', hue='État', ax=ax)
+            ax.set_title('Suivi des produits à travers la chaîne logistique')
+            ax.set_ylabel('Nombre de produits')
+            ax.set_xlabel('Emplacement')
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
+        else:
+            st.write("Les colonnes 'Emplacement' et 'État' n'existent pas dans le dataset.")
+
+    with tab3:
+        st.write("### Calcul des indicateurs clés de performance (KPIs)")
+        st.metric(label="Taux de conformité", value=f"{taux_conformite:.2f}%")
+        st.metric(label="Taux de défaut", value=f"{taux_defaut:.2f}%")
+
+    with tab4:
+        st.write("### Visualisation des défauts")
+        if 'Défaut Inspection' in data.columns:
+            fig = px.bar(defauts_par_type, x=defauts_par_type.index, y=defauts_par_type.values, labels={'x': 'Type de défaut', 'y': 'Nombre de défauts'}, title='Répartition des défauts par type')
+            st.plotly_chart(fig, key="defauts_par_type_tab4")
+        else:
+            st.write("La colonne 'Défaut Inspection' n'existe pas dans le dataset.")
+
+    with tab5:
+        st.write("### Analyse des tendances dans le temps")
+        if not tendances.empty:
+            fig = px.line(tendances, labels={'value': 'Nombre', 'Date': 'Date'}, title='Tendances des résultats QC dans le temps')
+            st.plotly_chart(fig, key="tendances_tab5")
+        else:
+            st.write("La colonne 'Date' n'existe pas dans le dataset.")
+
+    with tab6:
+        st.write("### Détection des anomalies spécifiques")
+        if not anomalies_specifiques.empty:
+            st.dataframe(anomalies_specifiques)
+            st.write("### Suggestions de correction")
+            for suggestion in suggestions:
+                st.write(suggestion)
+        else:
+            st.write("Aucune anomalie spécifique détectée.")
+
+    with tab7:
+        st.write("### Entraînement du modèle de prédiction des défauts")
+        if st.button("Entraîner le modèle"):
+            modele = entrainer_modele(data)
+            st.success("Modèle entraîné avec succès")
 
     # Générer le rapport en PDF
     pdf_file = generer_rapport(data, taux_conformite, taux_defaut, defauts_par_type, tendances, anomalies_specifiques, suggestions)
